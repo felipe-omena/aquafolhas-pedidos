@@ -4,7 +4,10 @@ type WhatsAppOrder = {
   protocol: string;
   customerName: string;
   phone: string;
+  deliveryMethod: "delivery" | "pickup";
+  paymentMethod: string;
   totalCents: number;
+  items: { productName: string; quantity: number }[];
 };
 
 export type WhatsAppResult = {
@@ -17,6 +20,7 @@ const STATUS_LABELS: Record<string, string> = {
   preparing: "em separação",
   ready: "separado",
   delivered: "entregue",
+  canceled: "cancelado",
 };
 
 function normalizeBrazilianPhone(value: string) {
@@ -30,7 +34,12 @@ function formatMoney(cents: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 }
 
-export async function sendOrderStatusMessage(order: WhatsAppOrder, status: "preparing" | "ready" | "delivered"): Promise<WhatsAppResult> {
+function orderSummary(order: WhatsAppOrder) {
+  const summary = order.items.map((item) => `${item.quantity}x ${item.productName}`).join(", ");
+  return summary.length > 300 ? `${summary.slice(0, 297)}...` : summary;
+}
+
+export async function sendOrderStatusMessage(order: WhatsAppOrder, status: "preparing" | "ready" | "delivered" | "canceled"): Promise<WhatsAppResult> {
   const config = env as unknown as {
     WHATSAPP_ACCESS_TOKEN?: string;
     WHATSAPP_PHONE_NUMBER_ID?: string;
@@ -67,6 +76,9 @@ export async function sendOrderStatusMessage(order: WhatsAppOrder, status: "prep
               { type: "text", text: order.customerName.split(" ")[0] || order.customerName },
               { type: "text", text: order.protocol },
               { type: "text", text: STATUS_LABELS[status] },
+              { type: "text", text: orderSummary(order) },
+              { type: "text", text: order.deliveryMethod === "delivery" ? "Entrega no sábado" : "Retirada no domingo" },
+              { type: "text", text: order.paymentMethod },
               { type: "text", text: formatMoney(order.totalCents) },
             ],
           }],

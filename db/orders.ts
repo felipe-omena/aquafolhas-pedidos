@@ -45,7 +45,7 @@ type JoinedRow = {
   address: string;
   payment_method: string;
   notes: string;
-  status: "received" | "preparing" | "ready" | "delivered";
+  status: "received" | "preparing" | "ready" | "delivered" | "canceled";
   discount_cents: number;
   total_cents: number;
   printed_at: string | null;
@@ -67,7 +67,7 @@ export async function listOrders(limit = 100) {
   const result = await db.prepare(`SELECT o.protocol, o.customer_name, o.phone, o.delivery_method, o.address, o.payment_method, o.notes, o.status, o.discount_cents, o.total_cents, o.printed_at, o.whatsapp_status, o.whatsapp_last_error, o.whatsapp_sent_at, o.last_notified_status, o.created_at, i.product_id, i.product_name, i.unit, i.quantity, i.unit_price_cents, i.subtotal_cents FROM orders o LEFT JOIN order_items i ON i.order_protocol = o.protocol WHERE o.protocol IN (SELECT protocol FROM orders ORDER BY created_at DESC LIMIT ?) ORDER BY o.created_at DESC, i.id ASC`)
     .bind(limit).all<JoinedRow>();
   const grouped = new Map<string, {
-    protocol: string; customerName: string; phone: string; deliveryMethod: "delivery" | "pickup"; address: string; paymentMethod: string; notes: string; status: "received" | "preparing" | "ready" | "delivered"; discountCents: number; totalCents: number; printedAt: string | null; whatsappStatus: "pending" | "sent" | "failed" | "not_configured"; whatsappLastError: string | null; whatsappSentAt: string | null; lastNotifiedStatus: string | null; createdAt: string; items: StoredOrderItem[];
+    protocol: string; customerName: string; phone: string; deliveryMethod: "delivery" | "pickup"; address: string; paymentMethod: string; notes: string; status: "received" | "preparing" | "ready" | "delivered" | "canceled"; discountCents: number; totalCents: number; printedAt: string | null; whatsappStatus: "pending" | "sent" | "failed" | "not_configured"; whatsappLastError: string | null; whatsappSentAt: string | null; lastNotifiedStatus: string | null; createdAt: string; items: StoredOrderItem[];
   }>();
   for (const row of result.results) {
     if (!grouped.has(row.protocol)) grouped.set(row.protocol, {
@@ -87,6 +87,14 @@ export async function updateOrder(protocol: string, status?: string, printed?: b
   if (printed) statements.push(db.prepare("UPDATE orders SET printed_at = CURRENT_TIMESTAMP WHERE protocol = ?").bind(protocol));
   if (!statements.length) throw new Error("Nenhuma atualização informada.");
   await db.batch(statements);
+}
+
+export async function deleteOrder(protocol: string) {
+  const db = getBinding();
+  await db.batch([
+    db.prepare("DELETE FROM order_items WHERE order_protocol = ?").bind(protocol),
+    db.prepare("DELETE FROM orders WHERE protocol = ?").bind(protocol),
+  ]);
 }
 
 export async function saveWhatsAppResult(protocol: string, orderStatus: string, result: { status: "sent" | "failed" | "not_configured"; error?: string }) {

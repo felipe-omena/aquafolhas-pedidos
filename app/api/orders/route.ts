@@ -1,10 +1,10 @@
-import { insertOrder, listOrders, saveWhatsAppResult, updateOrder } from "@/db/orders";
+import { deleteOrder, insertOrder, listOrders, saveWhatsAppResult, updateOrder } from "@/db/orders";
 import { CATALOG } from "@/lib/catalog";
 import { sendOrderStatusMessage } from "@/lib/whatsapp";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { env } from "cloudflare:workers";
 
-const allowedStatuses = new Set(["preparing", "ready", "delivered"]);
+const allowedStatuses = new Set(["preparing", "ready", "delivered", "canceled"]);
 
 function clean(value: unknown, max = 180) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -85,11 +85,26 @@ export async function PATCH(request: Request) {
     let order = (await listOrders()).find((item) => item.protocol === orderProtocol);
     let notification = null;
     if (status && order) {
-      notification = await sendOrderStatusMessage(order, status as "preparing" | "ready" | "delivered");
+      notification = await sendOrderStatusMessage(order, status as "preparing" | "ready" | "delivered" | "canceled");
       await saveWhatsAppResult(order.protocol, status, notification);
       order = (await listOrders()).find((item) => item.protocol === orderProtocol);
     }
     return Response.json({ order, notification });
+  } catch (error) {
+    return Response.json({ error: errorMessage(error) }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    if (!(await isAdmin())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
+    const body = await request.json() as { protocol?: unknown };
+    const orderProtocol = clean(body.protocol, 40);
+    if (!orderProtocol) return Response.json({ error: "Informe o pedido que será excluído." }, { status: 400 });
+    const order = (await listOrders()).find((item) => item.protocol === orderProtocol);
+    if (!order) return Response.json({ error: "Pedido não encontrado." }, { status: 404 });
+    await deleteOrder(orderProtocol);
+    return Response.json({ deleted: true, protocol: orderProtocol });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, ClipboardCheck, Copy, MessageCircle, Minus, PackageCheck, Plus, Printer, RefreshCw, Search, ShoppingBasket, Sprout, Truck, WalletCards, X } from "lucide-react";
+import { Ban, Check, ChevronRight, ClipboardCheck, Copy, MessageCircle, Minus, PackageCheck, Plus, Printer, RefreshCw, Search, ShoppingBasket, Sprout, Trash2, Truck, WalletCards, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,10 +11,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { CATALOG, type CatalogProduct } from "@/lib/catalog";
 
 type Cart = Record<string, number>;
-type OrderStatus = "received" | "preparing" | "ready" | "delivered";
+type OrderStatus = "received" | "preparing" | "ready" | "delivered" | "canceled";
 type OrderItem = { productId: string; productName: string; unit: string; quantity: number; unitPriceCents: number; subtotalCents: number };
 type Order = { protocol: string; customerName: string; phone: string; deliveryMethod: "delivery" | "pickup"; address: string; paymentMethod: string; notes: string; status: OrderStatus; discountCents: number; totalCents: number; printedAt: string | null; whatsappStatus: "pending" | "sent" | "failed" | "not_configured"; whatsappLastError: string | null; whatsappSentAt: string | null; lastNotifiedStatus: string | null; createdAt: string; items: OrderItem[] };
 type CheckoutData = { customerName: string; phone: string; deliveryMethod: "delivery" | "pickup"; address: string; paymentMethod: string; notes: string };
@@ -25,6 +26,7 @@ const STATUS: Record<OrderStatus, { label: string; className: string }> = {
   preparing: { label: "Em separação", className: "status-preparing" },
   ready: { label: "Separado", className: "status-ready" },
   delivered: { label: "Entregue", className: "status-delivered" },
+  canceled: { label: "Cancelado", className: "status-canceled" },
 };
 const initialCheckout: CheckoutData = { customerName: "", phone: "", deliveryMethod: "delivery", address: "", paymentMethod: "Pix", notes: "" };
 
@@ -128,13 +130,22 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
     }
   }
 
+  async function deleteOrder(protocol: string) {
+    const response = await fetch("/api/orders", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ protocol }) });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(result.error || "Não foi possível excluir o pedido.");
+    await loadOrders(true);
+    toast.success(`Pedido ${protocol} excluído.`);
+  }
+
   function handlePrint(order: Order) { setPrintOrder(order); window.setTimeout(() => { window.print(); void updateOrder(order.protocol, { printed: true }).catch(() => undefined); }, 120); }
-  function whatsappText(order: Order) { return encodeURIComponent(`Olá, AquaFolhas! Meu pedido está em separação.\n\nProtocolo: ${order.protocol}\n${order.items.map((item) => `${item.quantity}x ${item.productName}`).join("\n")}\nTotal: ${cents(order.totalCents)}\n\nMeu protocolo é ${order.protocol}.`); }
 
   const today = new Date().toDateString();
   const todayOrders = orders.filter((order) => new Date(order.createdAt).toDateString() === today);
-  const openOrders = orders.filter((order) => order.status !== "delivered");
-  const pendingPrint = orders.filter((order) => !order.printedAt);
+  const validOrders = orders.filter((order) => order.status !== "canceled");
+  const todayValidOrders = todayOrders.filter((order) => order.status !== "canceled");
+  const openOrders = validOrders.filter((order) => order.status !== "delivered");
+  const pendingPrint = validOrders.filter((order) => !order.printedAt);
 
   useEffect(() => {
     const context = typeof document === "undefined" ? undefined : (document as Document & { modelContext?: { registerTool: (tool: unknown, options?: { signal?: AbortSignal }) => void | Promise<void> } }).modelContext;
@@ -181,12 +192,20 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
         {!customerOnly && <TabsContent value="admin">
           <section className="admin-page">
             <div className="admin-heading"><div><p className="eyebrow intro-eyebrow">PAINEL AQUAFOLHAS</p><h1>Pedidos de hoje</h1><p>Atualização automática a cada 8 segundos.</p></div><div className="admin-actions"><Button variant="outline" onClick={() => void loadOrders()} disabled={loadingOrders}><RefreshCw className={loadingOrders ? "spin" : ""} /> Atualizar</Button><Button onClick={() => pendingPrint[0] && handlePrint(pendingPrint[0])} disabled={!pendingPrint.length}><Printer /> Imprimir próximo</Button></div></div>
-            <div className="metric-grid"><article><span className="metric-icon lime"><ClipboardCheck /></span><div><span>Pedidos hoje</span><strong>{todayOrders.length}</strong></div></article><article><span className="metric-icon yellow"><WalletCards /></span><div><span>Vendas hoje</span><strong>{cents(todayOrders.reduce((sum, order) => sum + order.totalCents, 0))}</strong></div></article><article><span className="metric-icon blue"><PackageCheck /></span><div><span>Em andamento</span><strong>{openOrders.length}</strong></div></article><article><span className="metric-icon orange"><Printer /></span><div><span>A imprimir</span><strong>{pendingPrint.length}</strong></div></article></div>
+            <div className="metric-grid"><article><span className="metric-icon lime"><ClipboardCheck /></span><div><span>Pedidos hoje</span><strong>{todayOrders.length}</strong></div></article><article><span className="metric-icon yellow"><WalletCards /></span><div><span>Vendas hoje</span><strong>{cents(todayValidOrders.reduce((sum, order) => sum + order.totalCents, 0))}</strong></div></article><article><span className="metric-icon blue"><PackageCheck /></span><div><span>Em andamento</span><strong>{openOrders.length}</strong></div></article><article><span className="metric-icon orange"><Printer /></span><div><span>A imprimir</span><strong>{pendingPrint.length}</strong></div></article></div>
             {orderError && <div className="error-banner"><strong>O banco de pedidos ainda não respondeu.</strong><span>{orderError}</span><Button variant="outline" size="sm" onClick={() => void loadOrders()}>Tentar novamente</Button></div>}
             <div className="orders-board"><div className="orders-title"><div><h2>Fila de separação</h2><p>Os pedidos mais novos aparecem primeiro.</p></div><span>{orders.length} no histórico</span></div>
-              {loadingOrders && !orders.length ? <div className="empty-state"><RefreshCw className="spin" /><h2>Buscando pedidos</h2></div> : orders.length ? <div className="order-list">{orders.map((order) => <article className={`order-card ${!order.printedAt ? "needs-print" : ""}`} key={order.protocol}><div className="order-main"><div className="order-topline"><div><strong>{order.protocol}</strong><span>{shortDate(order.createdAt)}</span></div><span className={`status-pill ${STATUS[order.status].className}`}>{STATUS[order.status].label}</span></div><h3>{order.customerName}</h3><p>{order.items.map((item) => `${item.quantity}× ${item.productName}`).join(" · ")}</p><div className="order-meta"><span><Truck /> {order.deliveryMethod === "delivery" ? "Entrega sábado" : "Retirada domingo"}</span><span>{order.paymentMethod}</span><strong>{cents(order.totalCents)}</strong><span className={order.whatsappStatus === "sent" ? "whatsapp-sent" : "whatsapp-pending"}><MessageCircle /> {order.whatsappStatus === "sent" ? "WhatsApp enviado" : "WhatsApp pendente"}</span></div></div><div className="order-controls"><Select value={order.status} onValueChange={(value) => void updateOrder(order.protocol, { status: value as OrderStatus }).catch((error) => toast.error(error.message))}><SelectTrigger aria-label={`Status do pedido ${order.protocol}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="preparing">Em separação</SelectItem><SelectItem value="ready">Separado</SelectItem><SelectItem value="delivered">Entregue</SelectItem></SelectContent></Select><Button variant={order.printedAt ? "outline" : "default"} onClick={() => handlePrint(order)}><Printer /> {order.printedAt ? "Reimprimir" : "Imprimir"}</Button></div></article>)}</div> : <div className="empty-state"><ClipboardCheck /><h2>Nenhum pedido ainda</h2><p>Faça um pedido de teste no catálogo para vê-lo aqui.</p><Button onClick={() => setActiveTab("shop")}>Abrir catálogo</Button></div>}
+              {loadingOrders && !orders.length ? <div className="empty-state"><RefreshCw className="spin" /><h2>Buscando pedidos</h2></div> : orders.length ? <div className="order-list">{orders.map((order) => <article className={`order-card ${!order.printedAt && order.status !== "canceled" ? "needs-print" : ""}`} key={order.protocol}>
+                <div className="order-main"><div className="order-topline"><div><strong>{order.protocol}</strong><span>{shortDate(order.createdAt)}</span></div><span className={`status-pill ${STATUS[order.status].className}`}>{STATUS[order.status].label}</span></div><h3>{order.customerName}</h3><p>{order.items.map((item) => `${item.quantity}× ${item.productName}`).join(" · ")}</p><div className="order-meta"><span><Truck /> {order.deliveryMethod === "delivery" ? "Entrega sábado" : "Retirada domingo"}</span><span>{order.paymentMethod}</span><strong>{cents(order.totalCents)}</strong><span className={order.whatsappStatus === "sent" ? "whatsapp-sent" : "whatsapp-pending"}><MessageCircle /> {order.whatsappStatus === "sent" ? "WhatsApp enviado" : "WhatsApp pendente"}</span></div></div>
+                <div className="order-controls">
+                  <Select value={order.status === "canceled" ? "canceled" : order.status} disabled={order.status === "canceled"} onValueChange={(value) => void updateOrder(order.protocol, { status: value as OrderStatus }).catch((error) => toast.error(error.message))}><SelectTrigger aria-label={`Status do pedido ${order.protocol}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="preparing">Em separação</SelectItem><SelectItem value="ready">Separado</SelectItem><SelectItem value="delivered">Entregue</SelectItem>{order.status === "canceled" && <SelectItem value="canceled">Cancelado</SelectItem>}</SelectContent></Select>
+                  <Button variant={order.printedAt ? "outline" : "default"} disabled={order.status === "canceled"} onClick={() => handlePrint(order)}><Printer /> {order.printedAt ? "Reimprimir" : "Imprimir"}</Button>
+                  {order.status !== "canceled" && <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" aria-label={`Cancelar pedido ${order.protocol}`}><Ban /> Cancelar</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Cancelar o pedido {order.protocol}?</AlertDialogTitle><AlertDialogDescription>O pedido ficará marcado como cancelado e o cliente receberá um aviso automático no WhatsApp da AquaFolhas.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void updateOrder(order.protocol, { status: "canceled" }).catch((error) => toast.error(error.message))}>Cancelar pedido</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+                  <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="delete-order" aria-label={`Excluir pedido ${order.protocol}`}><Trash2 /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir o pedido {order.protocol}?</AlertDialogTitle><AlertDialogDescription>Esta ação apaga permanentemente o pedido e seus itens do histórico. Ela não envia mensagem ao cliente.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void deleteOrder(order.protocol).catch((error) => toast.error(error.message))}>Excluir definitivamente</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+                </div>
+              </article>)}</div> : <div className="empty-state"><ClipboardCheck /><h2>Nenhum pedido ainda</h2><p>Faça um pedido de teste no catálogo para vê-lo aqui.</p><Button onClick={() => setActiveTab("shop")}>Abrir catálogo</Button></div>}
             </div>
-            <section className="report-card"><div><p className="eyebrow">RELATÓRIO RÁPIDO</p><h2>Resumo do movimento</h2></div><div className="report-stats"><span><strong>{orders.length}</strong> pedidos registrados</span><span><strong>{cents(orders.reduce((sum, order) => sum + order.totalCents, 0))}</strong> em vendas</span><span><strong>{orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0)}</strong> itens vendidos</span></div></section>
+            <section className="report-card"><div><p className="eyebrow">RELATÓRIO RÁPIDO</p><h2>Resumo do movimento</h2></div><div className="report-stats"><span><strong>{orders.length}</strong> pedidos registrados</span><span><strong>{cents(validOrders.reduce((sum, order) => sum + order.totalCents, 0))}</strong> em vendas</span><span><strong>{validOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0)}</strong> itens vendidos</span></div></section>
           </section>
         </TabsContent>}
       </Tabs>
@@ -198,7 +217,7 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
       <Button type="submit" size="lg" className="checkout-submit" disabled={saving}>{saving ? "Enviando pedido..." : `Enviar pedido · ${cents(totalCents)}`}</Button><p className="secure-note"><Check /> Você receberá um protocolo assim que o pedido for confirmado.</p>
     </form></SheetContent></Sheet>
 
-    <Sheet open={!!successOrder} onOpenChange={(open) => !open && setSuccessOrder(null)}><SheetContent side="bottom" className="success-sheet">{successOrder && <div className="success-content"><img src="/logo-aquafolhas.jpeg" alt="AquaFolhas" /><span className="success-icon"><Check /></span><p className="eyebrow">PEDIDO EM SEPARAÇÃO</p><SheetTitle>Pronto, {successOrder.customerName.split(" ")[0]}!</SheetTitle><SheetDescription>{successOrder.whatsappStatus === "sent" ? "Enviamos o protocolo e o status para o WhatsApp informado." : "Guarde seu protocolo. A confirmação automática do WhatsApp está pendente."}</SheetDescription><div className="protocol-box"><span>Protocolo</span><strong>{successOrder.protocol}</strong><Button variant="ghost" size="icon" onClick={() => void navigator.clipboard.writeText(successOrder.protocol).then(() => toast.success("Protocolo copiado"))}><Copy /></Button></div><div className="success-actions">{successOrder.whatsappStatus !== "sent" && <Button asChild size="lg"><a href={`https://wa.me/5561998652819?text=${whatsappText(successOrder)}`} target="_blank" rel="noreferrer">Confirmar pedido com a AquaFolhas</a></Button>}<Button variant="outline" size="lg" onClick={() => setSuccessOrder(null)}>Voltar ao catálogo</Button></div></div>}</SheetContent></Sheet>
+    <Sheet open={!!successOrder} onOpenChange={(open) => !open && setSuccessOrder(null)}><SheetContent side="bottom" className="success-sheet">{successOrder && <div className="success-content"><img src="/logo-aquafolhas.jpeg" alt="AquaFolhas" /><span className="success-icon"><Check /></span><p className="eyebrow">PEDIDO EM SEPARAÇÃO</p><SheetTitle>Pronto, {successOrder.customerName.split(" ")[0]}!</SheetTitle><SheetDescription>{successOrder.whatsappStatus === "sent" ? "A AquaFolhas enviou o resumo, o protocolo e o status para o WhatsApp informado." : "Guarde seu protocolo. A AquaFolhas enviará o resumo automaticamente assim que a integração estiver disponível."}</SheetDescription><div className="protocol-box"><span>Protocolo</span><strong>{successOrder.protocol}</strong><Button variant="ghost" size="icon" onClick={() => void navigator.clipboard.writeText(successOrder.protocol).then(() => toast.success("Protocolo copiado"))}><Copy /></Button></div><div className="success-actions"><Button variant="outline" size="lg" onClick={() => setSuccessOrder(null)}>Voltar ao catálogo</Button></div></div>}</SheetContent></Sheet>
     <Receipt order={printOrder} /><Toaster position="top-center" richColors />
   </>;
 }
