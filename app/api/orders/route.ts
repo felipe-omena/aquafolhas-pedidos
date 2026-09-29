@@ -1,6 +1,5 @@
-import { deleteOrder, insertOrder, listOrders, saveWhatsAppResult, updateOrder } from "@/db/orders";
+import { deleteOrder, insertOrder, listOrders, updateOrder } from "@/db/orders";
 import { CATALOG } from "@/lib/catalog";
-import { sendOrderStatusMessage } from "@/lib/whatsapp";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { env } from "cloudflare:workers";
 
@@ -64,10 +63,7 @@ export async function POST(request: Request) {
     await insertOrder(order);
     const saved = (await listOrders(20)).find((item) => item.protocol === order.protocol);
     if (!saved) throw new Error("Pedido criado, mas não foi possível carregar a confirmação.");
-    const notification = await sendOrderStatusMessage(saved, "preparing");
-    await saveWhatsAppResult(saved.protocol, "preparing", notification);
-    const confirmed = (await listOrders(20)).find((item) => item.protocol === order.protocol);
-    return Response.json({ order: confirmed, notification }, { status: 201 });
+    return Response.json({ order: saved }, { status: 201 });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
   }
@@ -82,14 +78,8 @@ export async function PATCH(request: Request) {
     const printed = body.printed === true;
     if (!orderProtocol || (!status && !printed)) return Response.json({ error: "Atualização inválida." }, { status: 400 });
     await updateOrder(orderProtocol, status, printed);
-    let order = (await listOrders()).find((item) => item.protocol === orderProtocol);
-    let notification = null;
-    if (status && order) {
-      notification = await sendOrderStatusMessage(order, status as "preparing" | "ready" | "delivered" | "canceled");
-      await saveWhatsAppResult(order.protocol, status, notification);
-      order = (await listOrders()).find((item) => item.protocol === orderProtocol);
-    }
-    return Response.json({ order, notification });
+    const order = (await listOrders()).find((item) => item.protocol === orderProtocol);
+    return Response.json({ order });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
   }
