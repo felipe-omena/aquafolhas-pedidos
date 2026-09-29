@@ -1,9 +1,10 @@
-import { insertOrder, listOrders, updateOrder } from "@/db/orders";
+import { insertOrder, listOrders, saveWhatsAppResult, updateOrder } from "@/db/orders";
 import { CATALOG } from "@/lib/catalog";
+import { sendOrderStatusMessage } from "@/lib/whatsapp";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { env } from "cloudflare:workers";
 
-const allowedStatuses = new Set(["received", "preparing", "ready", "delivered"]);
+const allowedStatuses = new Set(["preparing", "ready", "delivered"]);
 
 function clean(value: unknown, max = 180) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -62,7 +63,11 @@ export async function POST(request: Request) {
     const order = { protocol: makeProtocol(), customerName, phone, deliveryMethod, address, paymentMethod, notes, discountCents, totalCents: subtotalCents - discountCents, items };
     await insertOrder(order);
     const saved = (await listOrders(20)).find((item) => item.protocol === order.protocol);
-    return Response.json({ order: saved }, { status: 201 });
+    if (!saved) throw new Error("Pedido criado, mas não foi possível carregar a confirmação.");
+    const notification = await sendOrderStatusMessage(saved, "preparing");
+    await saveWhatsAppResult(saved.protocol, "preparing", notification);
+    const confirmed = (await listOrders(20)).find((item) => item.protocol === order.protocol);
+    return Response.json({ order: confirmed, notification }, { status: 201 });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
   }
@@ -77,8 +82,14 @@ export async function PATCH(request: Request) {
     const printed = body.printed === true;
     if (!orderProtocol || (!status && !printed)) return Response.json({ error: "Atualização inválida." }, { status: 400 });
     await updateOrder(orderProtocol, status, printed);
-    const order = (await listOrders()).find((item) => item.protocol === orderProtocol);
-    return Response.json({ order });
+    let order = (await listOrders()).find((item) => item.protocol === orderProtocol);
+    let notification = null;
+    if (status && order) {
+      notification = await sendOrderStatusMessage(order, status as "preparing" | "ready" | "delivered");
+      await saveWhatsAppResult(order.protocol, status, notification);
+      order = (await listOrders()).find((item) => item.protocol === orderProtocol);
+    }
+    return Response.json({ order, notification });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
   }
