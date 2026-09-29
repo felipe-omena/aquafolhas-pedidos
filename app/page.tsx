@@ -56,7 +56,7 @@ function Receipt({ order }: { order: Order | null }) {
   </section>;
 }
 
-export default function Home() {
+export default function Home({ customerOnly = false }: { customerOnly?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState("shop");
   const [cart, setCart] = useState<Cart>({});
   const [query, setQuery] = useState("");
@@ -146,8 +146,8 @@ export default function Home() {
         <button className="brand" onClick={() => setActiveTab("shop")} aria-label="Ir para o catálogo"><img src="/logo-aquafolhas.jpeg" alt="AquaFolhas Produtos Sustentáveis" /></button>
         <div className="topbar-note"><span /> Pedidos abertos · (61) 99865-2819</div>
       </header>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="app-tabs">
-        <div className="nav-wrap"><TabsList className="main-nav" aria-label="Navegação principal"><TabsTrigger value="shop"><ShoppingBasket /> Fazer pedido</TabsTrigger><TabsTrigger value="admin"><ClipboardCheck /> Painel de pedidos</TabsTrigger></TabsList></div>
+      <Tabs value={customerOnly ? "shop" : activeTab} onValueChange={setActiveTab} className="app-tabs">
+        {!customerOnly && <div className="nav-wrap"><TabsList className="main-nav" aria-label="Navegação principal"><TabsTrigger value="shop"><ShoppingBasket /> Fazer pedido</TabsTrigger><TabsTrigger value="admin"><ClipboardCheck /> Painel de pedidos</TabsTrigger></TabsList></div>}
 
         <TabsContent value="shop">
           <section className="shop-intro">
@@ -174,7 +174,7 @@ export default function Home() {
           {itemCount > 0 && <div className="mobile-cart-bar"><div><span>{itemCount} {itemCount === 1 ? "item" : "itens"}</span><strong>{cents(subtotalCents)}</strong></div><Button onClick={() => setCheckoutOpen(true)}>Revisar pedido</Button></div>}
         </TabsContent>
 
-        <TabsContent value="admin">
+        {!customerOnly && <TabsContent value="admin">
           <section className="admin-page">
             <div className="admin-heading"><div><p className="eyebrow intro-eyebrow">PAINEL AQUAFOLHAS</p><h1>Pedidos de hoje</h1><p>Atualização automática a cada 8 segundos.</p></div><div className="admin-actions"><Button variant="outline" onClick={() => void loadOrders()} disabled={loadingOrders}><RefreshCw className={loadingOrders ? "spin" : ""} /> Atualizar</Button><Button onClick={() => pendingPrint[0] && handlePrint(pendingPrint[0])} disabled={!pendingPrint.length}><Printer /> Imprimir próximo</Button></div></div>
             <div className="metric-grid"><article><span className="metric-icon lime"><ClipboardCheck /></span><div><span>Pedidos hoje</span><strong>{todayOrders.length}</strong></div></article><article><span className="metric-icon yellow"><WalletCards /></span><div><span>Vendas hoje</span><strong>{cents(todayOrders.reduce((sum, order) => sum + order.totalCents, 0))}</strong></div></article><article><span className="metric-icon blue"><PackageCheck /></span><div><span>Em andamento</span><strong>{openOrders.length}</strong></div></article><article><span className="metric-icon orange"><Printer /></span><div><span>A imprimir</span><strong>{pendingPrint.length}</strong></div></article></div>
@@ -184,7 +184,7 @@ export default function Home() {
             </div>
             <section className="report-card"><div><p className="eyebrow">RELATÓRIO RÁPIDO</p><h2>Resumo do movimento</h2></div><div className="report-stats"><span><strong>{orders.length}</strong> pedidos registrados</span><span><strong>{cents(orders.reduce((sum, order) => sum + order.totalCents, 0))}</strong> em vendas</span><span><strong>{orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0)}</strong> itens vendidos</span></div></section>
           </section>
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
     </main>
 
