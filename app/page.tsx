@@ -56,8 +56,8 @@ function Receipt({ order }: { order: Order | null }) {
   </section>;
 }
 
-export default function Home({ customerOnly = false }: { customerOnly?: boolean } = {}) {
-  const [activeTab, setActiveTab] = useState("shop");
+export default function Home({ customerOnly = true, adminOnly = false }: { customerOnly?: boolean; adminOnly?: boolean } = {}) {
+  const [activeTab, setActiveTab] = useState(adminOnly ? "admin" : "shop");
   const [cart, setCart] = useState<Cart>({});
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todos");
@@ -146,10 +146,10 @@ export default function Home({ customerOnly = false }: { customerOnly?: boolean 
         <button className="brand" onClick={() => setActiveTab("shop")} aria-label="Ir para o catálogo"><img src="/logo-aquafolhas.jpeg" alt="AquaFolhas Produtos Sustentáveis" /></button>
         <div className="topbar-note"><span /> Pedidos abertos · (61) 99865-2819</div>
       </header>
-      <Tabs value={customerOnly ? "shop" : activeTab} onValueChange={setActiveTab} className="app-tabs">
-        {!customerOnly && <div className="nav-wrap"><TabsList className="main-nav" aria-label="Navegação principal"><TabsTrigger value="shop"><ShoppingBasket /> Fazer pedido</TabsTrigger><TabsTrigger value="admin"><ClipboardCheck /> Painel de pedidos</TabsTrigger></TabsList></div>}
+      <Tabs value={customerOnly ? "shop" : adminOnly ? "admin" : activeTab} onValueChange={setActiveTab} className="app-tabs">
+        {!customerOnly && !adminOnly && <div className="nav-wrap"><TabsList className="main-nav" aria-label="Navegação principal"><TabsTrigger value="shop"><ShoppingBasket /> Fazer pedido</TabsTrigger><TabsTrigger value="admin"><ClipboardCheck /> Painel de pedidos</TabsTrigger></TabsList></div>}
 
-        <TabsContent value="shop">
+        {!adminOnly && <TabsContent value="shop">
           <section className="shop-intro">
             <div><p className="eyebrow intro-eyebrow">PRODUTOS SUSTENTÁVEIS</p><h1>Mais frescor para a sua mesa.</h1><p>Higienizados, sem agrotóxicos e com protocolo na hora.</p>
               <div className="service-chips"><span><Truck /> Entrega no sábado</span><span><ShoppingBasket /> Retirada domingo · 15% OFF</span></div>
@@ -172,7 +172,7 @@ export default function Home({ customerOnly = false }: { customerOnly?: boolean 
             </aside>
           </div>
           {itemCount > 0 && <div className="mobile-cart-bar"><div><span>{itemCount} {itemCount === 1 ? "item" : "itens"}</span><strong>{cents(subtotalCents)}</strong></div><Button onClick={() => setCheckoutOpen(true)}>Revisar pedido</Button></div>}
-        </TabsContent>
+        </TabsContent>}
 
         {!customerOnly && <TabsContent value="admin">
           <section className="admin-page">

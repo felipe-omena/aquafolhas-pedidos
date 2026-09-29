@@ -1,5 +1,7 @@
 import { insertOrder, listOrders, updateOrder } from "@/db/orders";
 import { CATALOG } from "@/lib/catalog";
+import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { env } from "cloudflare:workers";
 
 const allowedStatuses = new Set(["received", "preparing", "ready", "delivered"]);
 
@@ -19,8 +21,15 @@ function errorMessage(error: unknown) {
   return message;
 }
 
+async function isAdmin() {
+  const user = await getChatGPTUser();
+  const adminEmail = (env as unknown as { ADMIN_EMAIL?: string }).ADMIN_EMAIL?.trim().toLowerCase();
+  return Boolean(user && adminEmail && user.email.trim().toLowerCase() === adminEmail);
+}
+
 export async function GET() {
   try {
+    if (!(await isAdmin())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
     return Response.json({ orders: await listOrders() }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
@@ -61,6 +70,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    if (!(await isAdmin())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
     const body = await request.json() as { protocol?: unknown; status?: unknown; printed?: unknown };
     const orderProtocol = clean(body.protocol, 40);
     const status = typeof body.status === "string" && allowedStatuses.has(body.status) ? body.status : undefined;
