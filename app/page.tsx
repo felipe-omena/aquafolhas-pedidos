@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Ban, Check, ChevronRight, ClipboardCheck, Copy, MessageCircle, Minus, PackageCheck, Plus, Printer, RefreshCw, Search, Send, ShoppingBasket, Sprout, Trash2, Truck, WalletCards, X } from "lucide-react";
+import { Ban, Check, ChevronRight, ClipboardCheck, Copy, MessageCircle, Minus, PackageCheck, Plus, Printer, RefreshCw, Search, ShoppingBasket, Sprout, Trash2, Truck, WalletCards, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,6 @@ type OrderStatus = "received" | "preparing" | "ready" | "delivered" | "canceled"
 type OrderItem = { productId: string; productName: string; unit: string; quantity: number; unitPriceCents: number; subtotalCents: number };
 type Order = { protocol: string; customerName: string; phone: string; deliveryMethod: "delivery" | "pickup"; address: string; paymentMethod: string; notes: string; status: OrderStatus; discountCents: number; totalCents: number; printedAt: string | null; whatsappStatus: "pending" | "sent" | "failed" | "not_configured"; whatsappLastError: string | null; whatsappSentAt: string | null; lastNotifiedStatus: string | null; whatsappWindowOpenedAt: string | null; createdAt: string; items: OrderItem[] };
 type CheckoutData = { customerName: string; phone: string; deliveryMethod: "delivery" | "pickup"; address: string; paymentMethod: string; notes: string };
-type WhatsAppIntegration = { configured: boolean; webhookReady: boolean; mode: "test" | "live"; businessNumber: string; hasApprovedTemplate: boolean; usedThisMonth: number; monthlyLimit: number; webhookUrl: string };
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const STATUS: Record<OrderStatus, { label: string; className: string }> = {
@@ -92,9 +91,6 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
   const [companyWhatsApp, setCompanyWhatsApp] = useState("5561998652819");
   const [automaticEnabled, setAutomaticEnabled] = useState(false);
-  const [integration, setIntegration] = useState<WhatsAppIntegration | null>(null);
-  const [testPhone, setTestPhone] = useState("");
-  const [testingWhatsApp, setTestingWhatsApp] = useState(false);
 
   const categories = useMemo(() => ["Todos", ...Array.from(new Set(CATALOG.map((p) => p.category)))], []);
   const filteredProducts = useMemo(() => {
@@ -118,12 +114,6 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
     finally { if (!quiet) setLoadingOrders(false); }
   }, []);
 
-  const loadIntegration = useCallback(async () => {
-    const response = await fetch("/api/whatsapp/status", { cache: "no-store" });
-    const data = await response.json() as { integration?: WhatsAppIntegration };
-    if (response.ok && data.integration) setIntegration(data.integration);
-  }, []);
-
   useEffect(() => {
     void fetch("/api/whatsapp/config", { cache: "no-store" }).then((response) => response.json()).then((data: { businessNumber?: string; automaticEnabled?: boolean }) => {
       if (data.businessNumber) setCompanyWhatsApp(data.businessNumber);
@@ -131,7 +121,7 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
     }).catch(() => undefined);
   }, []);
 
-  useEffect(() => { if (activeTab !== "admin") return; void loadOrders(); void loadIntegration(); const timer = window.setInterval(() => void loadOrders(true), 8000); return () => window.clearInterval(timer); }, [activeTab, loadIntegration, loadOrders]);
+  useEffect(() => { if (activeTab !== "admin") return; void loadOrders(); const timer = window.setInterval(() => void loadOrders(true), 8000); return () => window.clearInterval(timer); }, [activeTab, loadOrders]);
 
   const changeQuantity = useCallback((productId: string, delta: number) => setCart((current) => {
     const next = Math.max(0, (current[productId] || 0) + delta);
@@ -158,25 +148,10 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
 
   async function updateOrder(protocol: string, data: { status?: OrderStatus; printed?: boolean }) {
     const response = await fetch("/api/orders", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ protocol, ...data }) });
-    const result = await response.json() as { error?: string; whatsapp?: { status: "sent" | "failed" | "not_configured"; error?: string } };
+    const result = await response.json() as { error?: string };
     if (!response.ok) throw new Error(result.error || "Não foi possível atualizar o pedido.");
     await loadOrders(true);
-    if (data.status && result.whatsapp?.status === "sent") toast.success("Status atualizado e mensagem automática enviada.");
-    else if (data.status && result.whatsapp?.status === "failed") toast.warning(`Status atualizado. Automação não enviou: ${result.whatsapp.error || "verifique a integração."}`);
-    else if (data.status) toast.success("Status atualizado. Use o botão manual para avisar o cliente.");
-  }
-
-  async function sendWhatsAppTest() {
-    if (!testPhone.trim()) { toast.error("Informe o WhatsApp que receberá o teste."); return; }
-    setTestingWhatsApp(true);
-    try {
-      const response = await fetch("/api/whatsapp/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: testPhone }) });
-      const data = await response.json() as { result?: { status?: string; error?: string }; error?: string };
-      if (!response.ok || data.result?.status !== "sent") throw new Error(data.result?.error || data.error || "Não foi possível enviar o teste.");
-      toast.success("Mensagem de teste enviada pelo WhatsApp.");
-      await loadIntegration();
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Não foi possível enviar o teste."); }
-    finally { setTestingWhatsApp(false); }
+    if (data.status) toast.success("Status atualizado. Clique em Avisar no WhatsApp para enviar a mensagem.");
   }
 
   async function deleteOrder(protocol: string) {
@@ -241,9 +216,9 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
         {!customerOnly && <TabsContent value="admin">
           <section className="admin-page">
             <div className="admin-heading"><div><p className="eyebrow intro-eyebrow">PAINEL AQUAFOLHAS</p><h1>Pedidos de hoje</h1><p>Atualização automática a cada 8 segundos.</p></div><div className="admin-actions"><Button variant="outline" onClick={() => void loadOrders()} disabled={loadingOrders}><RefreshCw className={loadingOrders ? "spin" : ""} /> Atualizar</Button><Button onClick={() => pendingPrint[0] && handlePrint(pendingPrint[0])} disabled={!pendingPrint.length}><Printer /> Imprimir próximo</Button></div></div>
-            <section className={`whatsapp-integration ${integration?.configured && integration.webhookReady ? "connected" : "pending"}`}>
-              <div className="integration-copy"><span className="integration-icon"><MessageCircle /></span><div><p className="eyebrow">WHATSAPP AUTOMÁTICO</p><h2>{integration?.configured && integration.webhookReady ? "Integração pronta para testar" : "Aguardando conexão com a Meta"}</h2><p>{integration?.configured && integration.webhookReady ? `Modo ${integration.mode === "test" ? "teste" : "produção"} · ${displayWhatsapp(integration.businessNumber)} · ${integration.usedThisMonth} de ${integration.monthlyLimit} mensagens usadas no mês.` : "A estrutura automática já está instalada. Até as chaves serem conectadas, o envio manual continua disponível e nenhum disparo pago será feito."}</p></div></div>
-              {integration?.configured && integration.webhookReady ? <div className="integration-test"><Input aria-label="Número para receber o teste" inputMode="tel" value={testPhone} onChange={(event) => setTestPhone(event.target.value)} placeholder="WhatsApp para teste" /><Button onClick={() => void sendWhatsAppTest()} disabled={testingWhatsApp}>{testingWhatsApp ? <RefreshCw className="spin" /> : <Send />} Enviar teste</Button></div> : <div className="integration-next"><span>Próxima etapa: conectar o número no painel da Meta.</span>{integration?.webhookUrl && <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(integration.webhookUrl).then(() => toast.success("Endereço de integração copiado"))}><Copy /> Copiar endereço</Button>}</div>}
+            <section className="whatsapp-integration manual">
+              <div className="integration-copy"><span className="integration-icon"><MessageCircle /></span><div><p className="eyebrow">WHATSAPP MANUAL · SEM CUSTO</p><h2>Você confirma cada mensagem antes de enviar</h2><p>O cliente abre a conversa para confirmar o pedido. Quando o status mudar, clique em “Avisar no WhatsApp”: o resumo e o protocolo já estarão preenchidos para você enviar pelo WhatsApp Business.</p></div></div>
+              <div className="integration-next"><span>Nenhum disparo automático ou serviço pago está ativado.</span></div>
             </section>
             <div className="metric-grid"><article><span className="metric-icon lime"><ClipboardCheck /></span><div><span>Pedidos hoje</span><strong>{todayOrders.length}</strong></div></article><article><span className="metric-icon yellow"><WalletCards /></span><div><span>Vendas hoje</span><strong>{cents(todayValidOrders.reduce((sum, order) => sum + order.totalCents, 0))}</strong></div></article><article><span className="metric-icon blue"><PackageCheck /></span><div><span>Em andamento</span><strong>{openOrders.length}</strong></div></article><article><span className="metric-icon orange"><Printer /></span><div><span>A imprimir</span><strong>{pendingPrint.length}</strong></div></article></div>
             {orderError && <div className="error-banner"><strong>O banco de pedidos ainda não respondeu.</strong><span>{orderError}</span><Button variant="outline" size="sm" onClick={() => void loadOrders()}>Tentar novamente</Button></div>}
@@ -253,8 +228,8 @@ export default function Home({ customerOnly = true, adminOnly = false }: { custo
                 <div className="order-controls">
                   <Select value={order.status === "canceled" ? "canceled" : order.status} disabled={order.status === "canceled"} onValueChange={(value) => void updateOrder(order.protocol, { status: value as OrderStatus }).catch((error) => toast.error(error.message))}><SelectTrigger aria-label={`Status do pedido ${order.protocol}`}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="preparing">Em separação</SelectItem><SelectItem value="ready">Separado</SelectItem><SelectItem value="delivered">Entregue</SelectItem>{order.status === "canceled" && <SelectItem value="canceled">Cancelado</SelectItem>}</SelectContent></Select>
                   <Button variant={order.printedAt ? "outline" : "default"} disabled={order.status === "canceled"} onClick={() => handlePrint(order)}><Printer /> {order.printedAt ? "Reimprimir" : "Imprimir"}</Button>
-                  <Button asChild variant="outline"><a href={`https://wa.me/${whatsappNumber(order.phone)}?text=${managementWhatsappText(order)}`} target="_blank" rel="noreferrer"><MessageCircle /> Enviar manualmente</a></Button>
-                  {order.status !== "canceled" && <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" aria-label={`Cancelar pedido ${order.protocol}`}><Ban /> Cancelar</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Cancelar o pedido {order.protocol}?</AlertDialogTitle><AlertDialogDescription>O pedido ficará marcado como cancelado. O sistema tentará avisar o cliente automaticamente; o botão manual continuará disponível se o envio não puder ser feito.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void updateOrder(order.protocol, { status: "canceled" }).catch((error) => toast.error(error.message))}>Cancelar pedido</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+                  <Button asChild variant="outline"><a href={`https://wa.me/${whatsappNumber(order.phone)}?text=${managementWhatsappText(order)}`} target="_blank" rel="noreferrer"><MessageCircle /> Avisar no WhatsApp</a></Button>
+                  {order.status !== "canceled" && <AlertDialog><AlertDialogTrigger asChild><Button variant="outline" aria-label={`Cancelar pedido ${order.protocol}`}><Ban /> Cancelar</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Cancelar o pedido {order.protocol}?</AlertDialogTitle><AlertDialogDescription>O pedido ficará marcado como cancelado. Depois, use “Avisar no WhatsApp” para abrir a conversa com a mensagem de cancelamento pronta.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void updateOrder(order.protocol, { status: "canceled" }).catch((error) => toast.error(error.message))}>Cancelar pedido</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
                   <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="delete-order" aria-label={`Excluir pedido ${order.protocol}`}><Trash2 /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Excluir o pedido {order.protocol}?</AlertDialogTitle><AlertDialogDescription>Esta ação apaga permanentemente o pedido e seus itens do histórico. Ela não envia mensagem ao cliente.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Voltar</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void deleteOrder(order.protocol).catch((error) => toast.error(error.message))}>Excluir definitivamente</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
                 </div>
               </article>)}</div> : <div className="empty-state"><ClipboardCheck /><h2>Nenhum pedido ainda</h2><p>Faça um pedido de teste no catálogo para vê-lo aqui.</p><Button onClick={() => setActiveTab("shop")}>Abrir catálogo</Button></div>}

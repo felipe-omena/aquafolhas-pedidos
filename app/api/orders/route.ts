@@ -1,8 +1,7 @@
-import { deleteOrder, insertOrder, listOrders, saveWhatsAppResult, updateOrder } from "@/db/orders";
+import { deleteOrder, insertOrder, listOrders, updateOrder } from "@/db/orders";
 import { CATALOG } from "@/lib/catalog";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { env } from "cloudflare:workers";
-import { sendOrderStatusMessage } from "@/lib/whatsapp";
 
 const allowedStatuses = new Set(["preparing", "ready", "delivered", "canceled"]);
 
@@ -80,12 +79,7 @@ export async function PATCH(request: Request) {
     if (!orderProtocol || (!status && !printed)) return Response.json({ error: "Atualização inválida." }, { status: 400 });
     await updateOrder(orderProtocol, status, printed);
     const order = (await listOrders()).find((item) => item.protocol === orderProtocol);
-    let whatsapp = undefined;
-    if (status && order) {
-      whatsapp = await sendOrderStatusMessage(order, status as "preparing" | "ready" | "delivered" | "canceled");
-      await saveWhatsAppResult(order.protocol, status, whatsapp, whatsapp.messageKind || "status");
-    }
-    return Response.json({ order, whatsapp });
+    return Response.json({ order });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
   }
