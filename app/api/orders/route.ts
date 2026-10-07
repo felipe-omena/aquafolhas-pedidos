@@ -1,7 +1,7 @@
-import { deleteOrder, insertOrder, listOrders, updateOrder } from "@/db/orders";
-import { CATALOG } from "@/lib/catalog";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
-import { env } from "cloudflare:workers";
+import { deleteOrder, insertOrder, listOrders, saveWhatsAppResult, updateOrder } from "@/db/orders";
+import { listCatalogProducts } from "@/db/catalog";
+import { isAdminRequest } from "@/app/admin-auth";
+import { sendOrderStatusMessage } from "@/lib/whatsapp";
 
 const allowedStatuses = new Set(["preparing", "ready", "delivered", "canceled"]);
 
@@ -21,15 +21,9 @@ function errorMessage(error: unknown) {
   return message;
 }
 
-async function isAdmin() {
-  const user = await getChatGPTUser();
-  const adminEmail = (env as unknown as { ADMIN_EMAIL?: string }).ADMIN_EMAIL?.trim().toLowerCase();
-  return Boolean(user && adminEmail && user.email.trim().toLowerCase() === adminEmail);
-}
-
 export async function GET() {
   try {
-    if (!(await isAdmin())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
+    if (!(await isAdminRequest())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
     return Response.json({ orders: await listOrders() }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
@@ -50,8 +44,9 @@ export async function POST(request: Request) {
     if (!customerName || !phone || !paymentMethod) return Response.json({ error: "Preencha nome, WhatsApp e pagamento." }, { status: 400 });
     if (deliveryMethod === "delivery" && !address) return Response.json({ error: "Informe o endereço para entrega." }, { status: 400 });
     if (!Array.isArray(body.items) || !body.items.length) return Response.json({ error: "Escolha pelo menos um produto." }, { status: 400 });
+    const catalog = await listCatalogProducts(false);
     const items = body.items.map((requested) => {
-      const product = CATALOG.find((item) => item.id === requested.productId);
+      const product = catalog.find((item) => item.id === requested.productId);
       const quantity = Number(requested.quantity);
       if (!product || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) throw new Error("Um item do pedido é inválido.");
       return { productId: product.id, productName: product.name, unit: product.unit, quantity, unitPriceCents: product.priceCents, subtotalCents: product.priceCents * quantity };
@@ -71,7 +66,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    if (!(await isAdmin())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
+    if (!(await isAdminRequest())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
     const body = await request.json() as { protocol?: unknown; status?: unknown; printed?: unknown };
     const orderProtocol = clean(body.protocol, 40);
     const status = typeof body.status === "string" && allowedStatuses.has(body.status) ? body.status : undefined;
@@ -79,7 +74,12 @@ export async function PATCH(request: Request) {
     if (!orderProtocol || (!status && !printed)) return Response.json({ error: "Atualização inválida." }, { status: 400 });
     await updateOrder(orderProtocol, status, printed);
     const order = (await listOrders()).find((item) => item.protocol === orderProtocol);
-    return Response.json({ order });
+    let whatsapp = undefined;
+    if (status && order) {
+      whatsapp = await sendOrderStatusMessage(order, status as "preparing" | "ready" | "delivered" | "canceled");
+      await saveWhatsAppResult(order.protocol, status, whatsapp, whatsapp.messageKind || "status");
+    }
+    return Response.json({ order, whatsapp });
   } catch (error) {
     return Response.json({ error: errorMessage(error) }, { status: 500 });
   }
@@ -87,7 +87,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    if (!(await isAdmin())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
+    if (!(await isAdminRequest())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
     const body = await request.json() as { protocol?: unknown };
     const orderProtocol = clean(body.protocol, 40);
     if (!orderProtocol) return Response.json({ error: "Informe o pedido que será excluído." }, { status: 400 });

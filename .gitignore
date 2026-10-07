@@ -30,6 +30,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+/.dev.vars
+/aqua-servidor-saida.log
+/aqua-servidor-erro.log
+/wrangler.production.jsonc
+/.pnpm-store
 
 # vercel
 .vercel

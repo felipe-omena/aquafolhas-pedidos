@@ -51,3 +51,19 @@ export const whatsappMessages = sqliteTable("whatsapp_messages", {
   index("idx_whatsapp_messages_message_id").on(table.messageId),
   index("idx_whatsapp_messages_created_at").on(table.createdAt),
 ]);
+
+export const catalogProducts = sqliteTable("catalog_products", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  shortName: text("short_name").notNull(),
+  category: text("category").notNull(),
+  description: text("description").notNull().default(""),
+  unit: text("unit").notNull(),
+  priceCents: integer("price_cents").notNull(),
+  tone: text("tone").notNull().default("tone-forest"),
+  active: integer("active").notNull().default(1),
+  sortOrder: integer("sort_order").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_catalog_products_active_sort").on(table.active, table.sortOrder),
+]);

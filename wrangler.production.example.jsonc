@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "aquafolhas-pedidos",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist/client"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aquafolhas-producao",
+      "database_id": "COLOQUE_AQUI_O_ID_DO_BANCO_D1",
+      "migrations_dir": "drizzle"
+    }
+  ]
+}

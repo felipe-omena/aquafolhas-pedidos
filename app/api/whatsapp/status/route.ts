@@ -1,16 +1,9 @@
-import { env } from "cloudflare:workers";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { isAdminRequest } from "@/app/admin-auth";
 import { countOutgoingWhatsAppMessagesThisMonth } from "@/db/orders";
 import { getWhatsAppConfig } from "@/lib/whatsapp";
 
-async function isAdmin() {
-  const user = await getChatGPTUser();
-  const adminEmail = (env as unknown as { ADMIN_EMAIL?: string }).ADMIN_EMAIL?.trim().toLowerCase();
-  return Boolean(user && adminEmail && user.email.trim().toLowerCase() === adminEmail);
-}
-
 export async function GET(request: Request) {
-  if (!(await isAdmin())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
+  if (!(await isAdminRequest())) return Response.json({ error: "Acesso administrativo necessário." }, { status: 401 });
   const config = getWhatsAppConfig();
   const usedThisMonth = await countOutgoingWhatsAppMessagesThisMonth();
   return Response.json({
